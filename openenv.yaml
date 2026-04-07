@@ -4,7 +4,6 @@ description: >
   A product safety auditing environment where an AI agent
   must identify harmful ingredients, verify label claims,
   estimate risk, and deliver a final safety verdict.
-
 reward_range:
   min: 0.0
   max: 1.0
@@ -73,4 +72,4 @@ reward_components:
   partial_progress: ingredient discovery + claim validation
   step_penalty: -0.01 per step
   invalid_action_penalty: -0.05
-  repetition_penalty: -0.03
+  repetition_penalty: -0.03.03
