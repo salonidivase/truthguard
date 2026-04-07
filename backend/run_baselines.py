@@ -1,122 +1,101 @@
 """
-TruthGuardEnv Baseline Evaluation
-Runs all agents × all tasks × multiple episodes with fixed seed.
+TruthGuardEnv — Baseline Evaluation Script
+Runs all agents × all difficulties × multiple episodes.
 """
-
-import sys
-import os
+import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
+import random
 from env.env import TruthGuardEnv, Action
-from agents.agents import get_agent
-from tasks.tasks import get_task
-from grader.grader import grade
+from agents.agents import RandomAgent, RuleBasedAgent, SmartAgent
+from grader.grader import compute_score
 
-SEED = 42
-N_EPISODES = 10
 DIFFICULTIES = ["easy", "medium", "hard"]
-AGENT_TYPES = ["random", "rule_based", "smart"]
+AGENT_CLASSES = {
+    "RandomAgent": RandomAgent,
+    "RuleBasedAgent": RuleBasedAgent,
+    "SmartAgent": SmartAgent,
+}
+N_EPISODES = 10
+BASE_SEED = 2024
 MAX_STEPS = 20
 
 
 def run_episode(env, agent, difficulty, seed):
-    """Run one episode and return grade."""
-    task_data = get_task(difficulty, seed=seed)
-    product_data = {
-        "name": task_data["name"],
-        "category": task_data["category"],
-        "ingredients": task_data["ingredients"],
-        "label_claims": task_data["label_claims"],
-        "difficulty": task_data["difficulty"],
-        "noise_level": task_data["noise_level"],
-    }
-
+    product_data = {"difficulty": difficulty}
     obs = env.reset(seed=seed, product_data=product_data)
     agent.reset()
-    trajectory = []
-    step = 0
+    total_reward = 0.0
+    verdict = "SAFE"
 
-    while not obs.done and step < MAX_STEPS:
-        action_str = agent.act(obs)
-        action = Action(action=action_str)
+    for _ in range(MAX_STEPS):
+        if obs.done:
+            break
+        action = agent.act(obs)
         obs, reward, done, info = env.step(action)
-        trajectory.append({"action": action_str, "reward": reward})
-        step += 1
+        total_reward += reward
+        if "verdict" in info:
+            verdict = info["verdict"]
+        if done:
+            break
 
+    # Grader
     state = env.state()
-    if not state.done:
-        # Force verdict
-        action = Action(action="final_verdict:UNSAFE" if obs.risk_estimate > 0.5 else "final_verdict:SAFE")
-        obs, reward, done, info = env.step(action)
-        trajectory.append({"action": action.action, "reward": reward})
-        state = env.state()
-
-    return grade(state, trajectory)
+    predicted_harmful = [
+        i for i in obs.visible_ingredients
+        if any(kw in i for kw in [
+            "parabens", "formaldehyde", "lead", "mercury", "oxybenzone",
+            "bpa", "phthalates", "triclosan", "sodium lauryl sulfate",
+            "propylene glycol", "diethanolamine", "petrolatum", "aluminum",
+            "talc", "synthetic fragrance", "coal tar", "hydroquinone",
+        ])
+    ]
+    true_harmful = [i for i, v in state.harmful_flags.items() if v]
+    true_verdict = "UNSAFE" if state.true_risk_score >= 0.5 else "SAFE"
+    scores = compute_score(
+        predicted_harmful=predicted_harmful,
+        true_harmful=true_harmful,
+        risk_estimate=obs.risk_estimate,
+        true_risk=state.true_risk_score,
+        verdict=verdict,
+        true_verdict=true_verdict,
+    )
+    return scores["final_score"]
 
 
 def main():
+    print("=" * 60)
+    print("  TruthGuardEnv v1.0 — Baseline Evaluation")
+    print("=" * 60)
     env = TruthGuardEnv()
 
-    print("=" * 60)
-    print("TruthGuardEnv v1.0 - Baseline Evaluation")
-    print("=" * 60)
-    print(f"Seed: {SEED} | Episodes: {N_EPISODES} | Max Steps: {MAX_STEPS}")
-    print()
-
     results = {}
-
-    for agent_type in AGENT_TYPES:
-        results[agent_type] = {}
-        agent = get_agent(agent_type, seed=SEED)
-        print(f"Agent: {agent_type.upper()}")
-        print("-" * 40)
-
-        for difficulty in DIFFICULTIES:
+    for agent_name, AgentClass in AGENT_CLASSES.items():
+        results[agent_name] = {}
+        for diff in DIFFICULTIES:
             scores = []
-            f1s = []
-            cals = []
-            accs = []
-
             for ep in range(N_EPISODES):
-                ep_seed = SEED + ep * 100
-                grades = run_episode(env, agent, difficulty, ep_seed)
-                scores.append(grades["final_score"])
-                f1s.append(grades["issue_f1"])
-                cals.append(grades["risk_calibration"])
-                accs.append(grades["verdict_accuracy"])
+                seed = BASE_SEED + ep * 7
+                agent = AgentClass(seed=seed)
+                score = run_episode(env, agent, diff, seed)
+                scores.append(score)
+            avg = round(sum(scores) / len(scores), 4)
+            results[agent_name][diff] = avg
 
-            avg_score = sum(scores) / len(scores)
-            avg_f1 = sum(f1s) / len(f1s)
-            avg_cal = sum(cals) / len(cals)
-            avg_acc = sum(accs) / len(accs)
+    print(f"\n{'Agent':<18} {'Easy':>8} {'Medium':>10} {'Hard':>8}")
+    print("-" * 46)
+    for agent_name, diffs in results.items():
+        e = diffs["easy"]
+        m = diffs["medium"]
+        h = diffs["hard"]
+        print(f"{agent_name:<18} {e:>8.4f} {m:>10.4f} {h:>8.4f}")
 
-            results[agent_type][difficulty] = {
-                "final_score": round(avg_score, 4),
-                "issue_f1": round(avg_f1, 4),
-                "risk_calibration": round(avg_cal, 4),
-                "verdict_accuracy": round(avg_acc, 4),
-            }
+    print("\n── Summary (avg across difficulties) ──")
+    for agent_name, diffs in results.items():
+        avg = sum(diffs.values()) / 3
+        print(f"  {agent_name}: {avg:.4f}")
 
-            print(f"  {difficulty.capitalize():8s}: Score={avg_score:.3f}  "
-                  f"F1={avg_f1:.3f}  Cal={avg_cal:.3f}  Acc={avg_acc:.3f}")
-
-        print()
-
-    # Summary table
-    print("=" * 60)
-    print("SUMMARY TABLE")
-    print("=" * 60)
-    print(f"{'Agent':<15} {'Easy':>8} {'Medium':>8} {'Hard':>8} {'Avg':>8}")
-    print("-" * 45)
-
-    for agent_type in AGENT_TYPES:
-        scores = [results[agent_type][d]["final_score"] for d in DIFFICULTIES]
-        avg = sum(scores) / len(scores)
-        print(f"{agent_type:<15} {scores[0]:>8.3f} {scores[1]:>8.3f} {scores[2]:>8.3f} {avg:>8.3f}")
-
-    print()
-    print("Key: Score = 0.5*F1 + 0.3*Calibration + 0.2*Accuracy")
-    print("=" * 60)
+    print("\n✅ Baseline evaluation complete.")
     return results
 
 
