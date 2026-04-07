@@ -1,7 +1,8 @@
 """
-TruthGuardEnv v1.0 — OpenEnv-compliant product safety auditing environment.
+TruthGuardEnv v1.1 — Fixed & OpenEnv-compliant environment
 """
 import random
+import time
 from typing import Optional, Dict, Any, List, Tuple
 from pydantic import BaseModel
 
@@ -44,7 +45,7 @@ class State(BaseModel):
     difficulty: str
     seed: int
 
-    # ✅ FIX ADDED HERE
+    # ✅ Required fields (fix)
     last_action: str = ""
     last_action_result: str = ""
 
@@ -65,30 +66,37 @@ class TruthGuardEnv:
         self._state: Optional[State] = None
         self._difficulty: str = "easy"
 
-    # ── Public API ────────────────────────────────────────────────────
+    # ── RESET ─────────────────────────────────────────────────────────
 
     def reset(self, seed: int = 42, product_data: Optional[Dict] = None) -> Observation:
-        self._rng.seed(seed)
+        # 🔥 TRUE RANDOMNESS FIX
+        real_seed = seed + int(time.time() * 1000) % 100000
+        self._rng.seed(real_seed)
+
         self._difficulty = product_data.get("difficulty", "easy") if product_data else "easy"
 
         if product_data and product_data.get("ingredients"):
-            self._state = self._build_state_from_product(seed, product_data)
+            self._state = self._build_state_from_product(real_seed, product_data)
         else:
             from tasks.generator import generate_task
-            task = generate_task(self._difficulty, seed, self._rng)
-            self._state = self._build_state_from_task(seed, task)
+            task = generate_task(self._difficulty, real_seed, self._rng)
+            self._state = self._build_state_from_task(real_seed, task)
 
         return self._make_observation()
+
+    # ── STEP ──────────────────────────────────────────────────────────
 
     def step(self, action: Action) -> Tuple[Observation, float, bool, Dict]:
         if self._state is None:
             raise RuntimeError("Call reset() before step().")
+
         if self._state.done:
             return self._make_observation(), 0.0, True, {"info": "Episode already done."}
 
         self._state.step_num += 1
         reward, info = self._process_action(action)
         self._state.total_reward += reward
+
         obs = self._make_observation()
         return obs, reward, self._state.done, info
 
@@ -97,7 +105,7 @@ class TruthGuardEnv:
             raise RuntimeError("Call reset() first.")
         return self._state
 
-    # ── Action Processing ─────────────────────────────────────────────
+    # ── ACTION LOGIC ──────────────────────────────────────────────────
 
     def _process_action(self, action: Action) -> Tuple[float, Dict]:
         s = self._state
@@ -146,11 +154,16 @@ class TruthGuardEnv:
 
         elif action.action_type == "estimate_risk":
             s.last_action = "estimate_risk"
-            harmful_known = sum(1 for i in s.known_ingredients if s.harmful_flags.get(i, False))
+
+            harmful_known = sum(
+                1 for i in s.known_ingredients if s.harmful_flags.get(i, False)
+            )
             total_known = max(len(s.known_ingredients), 1)
 
             s.risk_estimate = round(harmful_known / total_known, 3)
-            s.confidence = round(len(s.known_ingredients) / max(len(s.hidden_ingredients), 1), 3)
+            s.confidence = round(
+                len(s.known_ingredients) / max(len(s.hidden_ingredients), 1), 3
+            )
 
             s.last_action_result = f"Risk {s.risk_estimate}, Confidence {s.confidence}"
             reward += 0.05
@@ -170,12 +183,7 @@ class TruthGuardEnv:
 
         return round(reward, 4), info
 
-    # ── Helpers ───────────────────────────────────────────────────────
-
-    def _get_claim_truth(self, claim: str) -> bool:
-        s = self._state
-        harmful_count = sum(1 for i in s.hidden_ingredients if s.harmful_flags.get(i, False))
-        return harmful_count == 0
+    # ── OBSERVATION ───────────────────────────────────────────────────
 
     def _make_observation(self) -> Observation:
         s = self._state
@@ -193,13 +201,25 @@ class TruthGuardEnv:
             label_claims=list(s.label_claims),
         )
 
+    # ── HELPERS ───────────────────────────────────────────────────────
+
+    def _get_claim_truth(self, claim: str) -> bool:
+        s = self._state
+        harmful_count = sum(
+            1 for i in s.hidden_ingredients if s.harmful_flags.get(i, False)
+        )
+        return harmful_count == 0
+
     def _build_state_from_task(self, seed: int, task: Dict) -> State:
         return State(
             step_num=0,
             hidden_ingredients=task["ingredients"],
             harmful_flags=task["harmful_flags"],
             true_risk_score=task["true_risk_score"],
-            known_ingredients=[],
+
+            # 🔥 FIX: show initial ingredients
+            known_ingredients=task["ingredients"][:2],
+
             checked_claims={},
             risk_estimate=0.0,
             confidence=0.0,
@@ -218,14 +238,20 @@ class TruthGuardEnv:
         ingredients = [i.lower() for i in product_data.get("ingredients", [])]
 
         harmful_keywords = {"parabens","lead","mercury","bpa","phthalates"}
-        harmful_flags = {i: any(k in i for k in harmful_keywords) for i in ingredients}
+        harmful_flags = {
+            i: any(k in i for k in harmful_keywords)
+            for i in ingredients
+        }
 
         return State(
             step_num=0,
             hidden_ingredients=ingredients,
             harmful_flags=harmful_flags,
             true_risk_score=0.5,
-            known_ingredients=[],
+
+            # 🔥 FIX: show initial ingredients
+            known_ingredients=ingredients[:2],
+
             checked_claims={},
             risk_estimate=0.0,
             confidence=0.0,
