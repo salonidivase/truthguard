@@ -8,7 +8,7 @@ import VerdictPanel from './components/VerdictPanel';
 import ControlBar from './components/ControlBar';
 import BackgroundFX from './components/BackgroundFX';
 
-const API = process.env.REACT_APP_API_URL || '';
+const API = window.location.origin;
 
 export default function App() {
   const [obs, setObs] = useState(null);
@@ -22,14 +22,20 @@ export default function App() {
   const [totalReward, setTotalReward] = useState(0);
   const [rewardHistory, setRewardHistory] = useState([]);
   const [gradeResult, setGradeResult] = useState(null);
-  const [seed, setSeed] = useState(42);
+
+  // 🔥 RANDOM SEED INITIAL
+  const [seed, setSeed] = useState(() => Math.floor(Math.random() * 100000));
+
   const [isResetting, setIsResetting] = useState(false);
   const runRef = useRef(false);
 
   const fetchState = useCallback(async () => {
     try {
       const r = await fetch(`${API}/state`);
-      if (r.ok) { const d = await r.json(); setState(d); }
+      if (r.ok) {
+        const d = await r.json();
+        setState(d);
+      }
     } catch {}
   }, []);
 
@@ -41,22 +47,37 @@ export default function App() {
     setRewardHistory([]);
     setGradeResult(null);
     runRef.current = false;
+
+    // 🔥 NEW RANDOM SEED EVERY RESET
+    const newSeed = Math.floor(Math.random() * 100000);
+    setSeed(newSeed);
+
     try {
       const r = await fetch(`${API}/reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seed, difficulty, product_data: pd }),
+        body: JSON.stringify({ seed: newSeed, difficulty, product_data: pd }),
       });
+
       const d = await r.json();
       setObs(d);
-      setLog([{ step: 0, action: 'RESET', result: 'Episode started. Begin auditing.', reward: 0 }]);
+
+      setLog([
+        {
+          step: 0,
+          action: 'RESET',
+          result: 'Episode started. Begin auditing.',
+          reward: 0,
+        },
+      ]);
+
       await fetchState();
     } catch (e) {
       console.error(e);
     } finally {
       setIsResetting(false);
     }
-  }, [productData, seed, difficulty, fetchState]);
+  }, [productData, difficulty, fetchState]);
 
   const doAgentStep = useCallback(async () => {
     try {
@@ -65,22 +86,45 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agent_type: agentType }),
       });
+
       const d = await r.json();
+
       setObs(d.observation);
-      setTotalReward(p => parseFloat((p + d.reward).toFixed(4)));
-      setRewardHistory(prev => [...prev, { step: d.observation.step_num, reward: d.reward, cumulative: parseFloat((prev.reduce((a, b) => a + b.reward, 0) + d.reward).toFixed(4)) }]);
-      setLog(prev => [...prev, {
-        step: d.observation.step_num,
-        action: d.action_taken ? `${d.action_taken.action_type}${d.action_taken.parameter ? ':' + d.action_taken.parameter : ''}` : '—',
-        result: d.observation.last_action_result,
-        reward: d.reward,
-      }]);
+
+      setTotalReward(p =>
+        parseFloat((p + d.reward).toFixed(4))
+      );
+
+      setRewardHistory(prev => [
+        ...prev,
+        {
+          step: d.observation.step_num,
+          reward: d.reward,
+          cumulative: parseFloat(
+            (prev.reduce((a, b) => a + b.reward, 0) + d.reward).toFixed(4)
+          ),
+        },
+      ]);
+
+      setLog(prev => [
+        ...prev,
+        {
+          step: d.observation.step_num,
+          action: d.action_taken
+            ? `${d.action_taken.action_type}${d.action_taken.parameter ? ':' + d.action_taken.parameter : ''}`
+            : '—',
+          result: d.observation.last_action_result,
+          reward: d.reward,
+        },
+      ]);
+
       if (d.done) {
         setDone(true);
         runRef.current = false;
         await fetchState();
         await doGrade(d.observation);
       }
+
       return d.done;
     } catch (e) {
       console.error(e);
@@ -90,15 +134,37 @@ export default function App() {
 
   const doGrade = useCallback(async (currentObs) => {
     try {
-      const harmfulKws = ['parabens','formaldehyde','lead','mercury','oxybenzone','bpa','phthalates','triclosan','sodium lauryl sulfate','propylene glycol','diethanolamine','petrolatum','aluminum','talc','synthetic fragrance','coal tar','hydroquinone'];
-      const predicted_harmful = (currentObs?.visible_ingredients || []).filter(i => harmfulKws.some(k => i.includes(k)));
+      const harmfulKws = [
+        'parabens','formaldehyde','lead','mercury','oxybenzone','bpa',
+        'phthalates','triclosan','sodium lauryl sulfate','propylene glycol',
+        'diethanolamine','petrolatum','aluminum','talc','synthetic fragrance',
+        'coal tar','hydroquinone'
+      ];
+
+      const predicted_harmful =
+        (currentObs?.visible_ingredients || []).filter(i =>
+          harmfulKws.some(k => i.includes(k))
+        );
+
       const lastResult = currentObs?.last_action_result || '';
-      const verdict = lastResult.includes('SAFE') && !lastResult.includes('UNSAFE') ? 'SAFE' : lastResult.includes('UNSAFE') ? 'UNSAFE' : 'SAFE';
+
+      const verdict =
+        lastResult.includes('SAFE') && !lastResult.includes('UNSAFE')
+          ? 'SAFE'
+          : lastResult.includes('UNSAFE')
+          ? 'UNSAFE'
+          : 'SAFE';
+
       const r = await fetch(`${API}/grade`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ predicted_harmful, risk_estimate: currentObs?.risk_estimate || 0, verdict }),
+        body: JSON.stringify({
+          predicted_harmful,
+          risk_estimate: currentObs?.risk_estimate || 0,
+          verdict,
+        }),
       });
+
       const d = await r.json();
       setGradeResult(d);
     } catch {}
@@ -106,38 +172,54 @@ export default function App() {
 
   const runAgent = useCallback(async () => {
     if (running || done) return;
-    if (!obs) { await doReset(); return; }
+
+    if (!obs) {
+      await doReset();
+      return;
+    }
+
     setRunning(true);
     runRef.current = true;
+
     while (runRef.current) {
       const isDone = await doAgentStep();
       if (isDone) break;
       await new Promise(r => setTimeout(r, 700));
     }
+
     setRunning(false);
     runRef.current = false;
   }, [running, done, obs, doReset, doAgentStep]);
 
-  const stopAgent = () => { runRef.current = false; setRunning(false); };
+  const stopAgent = () => {
+    runRef.current = false;
+    setRunning(false);
+  };
 
-  useEffect(() => { doReset(); }, []); // eslint-disable-line
+  useEffect(() => {
+    doReset();
+  }, []); // eslint-disable-line
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-deep)', position: 'relative' }}>
       <BackgroundFX />
       <div style={{ position: 'relative', zIndex: 1 }}>
-        <Header running={running} done={done} totalReward={totalReward} stepNum={obs?.step_num || 0} />
-
-        {/* TOP: Image Upload */}
+        <Header
+          running={running}
+          done={done}
+          totalReward={totalReward}
+          stepNum={obs?.step_num || 0}
+        />
         <div style={{ padding: '0 24px 16px' }}>
           <ImageUpload
-            onProductExtracted={(pd) => { setProductData(pd); doReset(pd); }}
+            onProductExtracted={(pd) => {
+              setProductData(pd);
+              doReset(pd);
+            }}
             difficulty={difficulty}
             setDifficulty={setDifficulty}
           />
         </div>
-
-        {/* CONTROL BAR */}
         <div style={{ padding: '0 24px 16px' }}>
           <ControlBar
             running={running}
@@ -155,20 +237,24 @@ export default function App() {
             isResetting={isResetting}
           />
         </div>
-
-        {/* MAIN 3-COL LAYOUT */}
-        <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr 280px', gap: '16px', padding: '0 24px 16px', minHeight: 0 }}>
-          {/* LEFT */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '300px 1fr 280px',
+          gap: '16px',
+          padding: '0 24px 16px'
+        }}>
           <ProductPanel obs={obs} state={state} productData={productData} />
-          {/* CENTER */}
           <ActionLog log={log} running={running} rewardHistory={rewardHistory} />
-          {/* RIGHT */}
           <BeliefPanel obs={obs} state={state} running={running} />
         </div>
-
-        {/* BOTTOM: Verdict */}
         <div style={{ padding: '0 24px 32px' }}>
-          <VerdictPanel obs={obs} state={state} done={done} gradeResult={gradeResult} rewardHistory={rewardHistory} />
+          <VerdictPanel
+            obs={obs}
+            state={state}
+            done={done}
+            gradeResult={gradeResult}
+            rewardHistory={rewardHistory}
+          />
         </div>
       </div>
     </div>
