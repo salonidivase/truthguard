@@ -1,0 +1,33 @@
+TruthGuardEnv v1.0 — System Overview
+Problem Statement:-
+Modern consumers rely on product labels such as “natural”, “chemical-free”, or “non-toxic”, but these claims are often misleading or unverifiable without expert knowledge.We are working on cosmetic products.
+
+In real-world workflows, professionals such as:-
+regulatory auditors
+product safety analysts
+e-commerce compliance teams
+must manually inspect ingredient lists, verify claims, and assess risk under incomplete or uncertain information.
+
+This process is:-
+time-consuming
+error-prone
+dependent on domain expertise
+
+Solution Overview:-
+TruthGuardEnv is an OpenEnv-compliant simulation environment that models this real-world task as a step-by-step AI auditing process.
+
+Instead of making a one-shot prediction, an AI agent must:-
+Investigate product ingredients
+Verify marketing claims
+Handle missing or noisy information
+Incrementally update its internal belief
+Produce a final safety verdict
+
+Real-World Task Simulation:-
+This environment simulates a product safety auditing workflow, which directly maps to real industry use cases:-
+E-commerce platforms → filtering misleading product listings
+Regulatory bodies → auditing compliance claims
+Dermatology & safety tools → assessing ingredient risks
+Consumer protection systems → identifying deceptive labeling
+
+The task is not artificial — it replicates how humans investigate, verify, and decide under uncertainty.
