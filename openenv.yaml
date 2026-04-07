@@ -1,0 +1,76 @@
+name: TruthGuardEnv
+version: "1.0.0"
+description: >
+  A product safety auditing environment where an AI agent
+  must identify harmful ingredients, verify label claims,
+  estimate risk, and deliver a final safety verdict.
+
+reward_range:
+  min: 0.0
+  max: 1.0
+
+action_space:
+  type: discrete_with_parameter
+  actions:
+    - type: query_ingredient
+      parameter: ingredient_name (string)
+      description: Reveals whether a named ingredient is present and if harmful
+    - type: verify_claim
+      parameter: claim_text (string)
+      description: Checks whether a label claim is truthful (noisy in hard mode)
+    - type: estimate_risk
+      parameter: "" (empty)
+      description: Computes a risk estimate from known ingredients
+    - type: final_verdict
+      parameter: "SAFE" | "UNSAFE"
+      description: Ends episode with a safety verdict
+
+observation_space:
+  fields:
+    - step_num: integer
+    - visible_ingredients: list[string]
+    - checked_claims: dict[string, bool]
+    - risk_estimate: float [0.0 – 1.0]
+    - confidence: float [0.0 – 1.0]
+    - last_action: string
+    - last_action_result: string
+    - done: boolean
+    - product_name: string
+    - product_category: string
+    - label_claims: list[string]
+
+tasks:
+  easy:
+    description: All ingredients visible, no noise, simple detection
+    max_steps: 15
+    noise: false
+    partial_observability: false
+  medium:
+    description: Half ingredients hidden, conflicting claims possible
+    max_steps: 20
+    noise: false
+    partial_observability: true
+  hard:
+    description: Most ingredients hidden, noisy claim verification (25% flip rate)
+    max_steps: 25
+    noise: true
+    partial_observability: true
+
+reproducibility:
+  seed_control: true
+  deterministic_grader: true
+  fixed_baseline_seed: 2024
+
+grader:
+  formula: "0.5 * issue_f1 + 0.3 * risk_calibration + 0.2 * verdict_accuracy"
+  metrics:
+    - issue_f1: F1 score for harmful ingredient detection
+    - risk_calibration: 1 - |estimated_risk - true_risk|
+    - verdict_accuracy: 1.0 if verdict correct else 0.0
+
+reward_components:
+  correctness_score: weight 0.7 of final verdict reward
+  partial_progress: ingredient discovery + claim validation
+  step_penalty: -0.01 per step
+  invalid_action_penalty: -0.05
+  repetition_penalty: -0.03
