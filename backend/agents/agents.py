@@ -1,11 +1,11 @@
 """
 TruthGuardEnv Agents — Random, RuleBased, Smart.
-Phase 2-safe: dummy Observation/Action, full SmartAgent logic.
+Phase 2-safe: uses dummy Observation/Action so no missing module errors.
 """
 import random
 from typing import List
 
-# ─── Dummy Observation & Action (Phase 2-safe) ─────────────────────────────
+# ─── Phase 2-safe Observation / Action
 class Observation:
     def __init__(self):
         self.step_num = 0
@@ -13,14 +13,14 @@ class Observation:
         self.label_claims = []
         self.checked_claims = {}  # claim -> True/False
         self.risk_estimate = 0.0
-        self.confidence = 0.8  # default safe value
+        self.confidence = 0.8
 
 class Action:
     def __init__(self, action_type="", parameter=""):
         self.action_type = action_type
         self.parameter = parameter
 
-# ─── Ingredient vocabulary ───────────────────────────────────────────────
+# ─── Ingredient vocabulary
 KNOWN_INGREDIENTS = [
     "aloe vera", "vitamin e", "glycerin", "chamomile extract", "shea butter",
     "jojoba oil", "green tea extract", "hyaluronic acid", "niacinamide",
@@ -41,7 +41,7 @@ HARMFUL_SET = {
     "talc", "synthetic fragrance", "coal tar", "hydroquinone",
 }
 
-# ─── Base Agent ─────────────────────────────────────────────────────────────
+# ─── Base Agent
 class BaseAgent:
     def __init__(self, seed: int = 42):
         self._rng = random.Random(seed)
@@ -52,7 +52,7 @@ class BaseAgent:
     def reset(self):
         pass
 
-# ─── Random Agent ───────────────────────────────────────────────────────────
+# ─── Random Agent
 class RandomAgent(BaseAgent):
     def act(self, obs: Observation) -> Action:
         if obs.step_num > 12:
@@ -71,7 +71,7 @@ class RandomAgent(BaseAgent):
             verdict = self._rng.choice(["SAFE", "UNSAFE"])
             return Action(action_type="final_verdict", parameter=verdict)
 
-# ─── Rule-Based Agent ───────────────────────────────────────────────────────
+# ─── Rule-Based Agent
 class RuleBasedAgent(BaseAgent):
     def __init__(self, seed: int = 42):
         super().__init__(seed)
@@ -109,7 +109,7 @@ class RuleBasedAgent(BaseAgent):
         verdict = "UNSAFE" if self._harmful_found or obs.risk_estimate >= 0.3 else "SAFE"
         return Action(action_type="final_verdict", parameter=verdict)
 
-# ─── Smart Agent ───────────────────────────────────────────────────────────
+# ─── Smart Agent
 class SmartAgent(BaseAgent):
     def __init__(self, seed: int = 42):
         super().__init__(seed)
