@@ -11,27 +11,23 @@ except ModuleNotFoundError as e:
     print("Error importing SmartAgent:", e)
     raise
 
-# ─── Dummy Observation class (Phase 2-safe) ───────────────────────────────
+# ─── Phase 2-safe Inference using dummy Observation ───────────────────────
 class Observation:
     def __init__(self):
         self.step_num = 0
         self.visible_ingredients = []
         self.label_claims = []
-        self.checked_claims = {}  # claim -> True/False
+        self.checked_claims = {}
         self.risk_estimate = 0.0
-        self.confidence = 0.8  # default safe value
+        self.confidence = 0.8
 
-# ─── Example Inference Logic ──────────────────────────────────────────────
 def main():
     try:
-        # Initialize agent
         agent = SmartAgent()
         agent.reset()
 
-        # Use dummy observation
         obs = Observation()
 
-        # Step through a few actions as demo
         for step in range(1, 15):
             obs.step_num = step
             action = agent.act(obs)
