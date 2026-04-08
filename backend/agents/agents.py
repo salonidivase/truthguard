@@ -4,9 +4,20 @@ All depend on observations and adapt step-by-step.
 """
 import random
 from typing import List, Optional
-from env.env import Observation, Action
+import sys
+import os
 
-# ─── Ingredient vocabulary (known to agents) ──────────────────────────────────
+# ─── Ensure project root is in Python path ───────────────────────────────
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+# ─── Import Observation and Action safely ───────────────────────────────
+try:
+    from env.env import Observation, Action
+except ModuleNotFoundError as e:
+    print("Error importing env module:", e)
+    raise
+
+# ─── Ingredient vocabulary (known to agents) ──────────────────────────────
 
 KNOWN_INGREDIENTS = [
     "aloe vera", "vitamin e", "glycerin", "chamomile extract", "shea butter",
@@ -28,7 +39,6 @@ HARMFUL_SET = {
     "talc", "synthetic fragrance", "coal tar", "hydroquinone",
 }
 
-
 # ─── Base Agent ───────────────────────────────────────────────────────────────
 
 class BaseAgent:
@@ -40,7 +50,6 @@ class BaseAgent:
 
     def reset(self):
         pass
-
 
 # ─── Random Agent ─────────────────────────────────────────────────────────────
 
@@ -64,7 +73,6 @@ class RandomAgent(BaseAgent):
         else:
             verdict = self._rng.choice(["SAFE", "UNSAFE"])
             return Action(action_type="final_verdict", parameter=verdict)
-
 
 # ─── Rule-Based Agent ─────────────────────────────────────────────────────────
 
@@ -114,7 +122,6 @@ class RuleBasedAgent(BaseAgent):
         verdict = "UNSAFE" if harmful_count >= 1 or obs.risk_estimate >= 0.3 else "SAFE"
         return Action(action_type="final_verdict", parameter=verdict)
 
-
 # ─── Smart Agent ──────────────────────────────────────────────────────────────
 
 class SmartAgent(BaseAgent):
@@ -150,15 +157,15 @@ class SmartAgent(BaseAgent):
             if ing in HARMFUL_SET and ing not in self._harmful_found:
                 self._harmful_found.append(ing)
 
-        # ── Detect claim conflicts ──
+        # Detect claim conflicts
         false_claims = [c for c, v in obs.checked_claims.items() if not v]
         self._claim_conflicts = len(false_claims)
 
-        # ── Dynamic phase transitions ──
+        # Dynamic phase transitions
         confidence_ok = obs.confidence >= 0.7
         enough_steps = obs.step_num >= 6
 
-        # ─ Phase: explore ─
+        # Phase: explore
         if self._phase == "explore":
             # Query the most dangerous unknown ingredients first
             priority_targets = self._prioritized_unqueried(obs)
@@ -171,11 +178,10 @@ class SmartAgent(BaseAgent):
             if enough_steps or confidence_ok:
                 self._phase = "verify"
 
-        # ─ Phase: verify ─
+        # Phase: verify
         if self._phase == "verify":
             unchecked = [c for c in obs.label_claims if c not in obs.checked_claims]
             if unchecked:
-                # Verify claims most relevant to detected risk
                 suspicious = [c for c in unchecked if any(
                     kw in c.lower() for kw in ["organic", "natural", "safe", "pure"]
                 )]
@@ -184,46 +190,35 @@ class SmartAgent(BaseAgent):
 
             self._phase = "assess"
 
-        # ─ Phase: assess ─
+        # Phase: assess
         if self._phase == "assess":
             if not self._risk_estimated:
                 self._risk_estimated = True
                 self._estimate_count += 1
                 return Action(action_type="estimate_risk", parameter="")
 
-            # Re-estimate if we found harmful items after last estimate
             if len(self._harmful_found) > self._estimate_count and self._estimate_count < 3:
                 self._estimate_count += 1
                 return Action(action_type="estimate_risk", parameter="")
 
             self._phase = "decide"
 
-        # ─ Phase: decide ─
+        # Phase: decide
         verdict = self._compute_verdict(obs)
         return Action(action_type="final_verdict", parameter=verdict)
 
     def _prioritized_unqueried(self, obs: Observation) -> List[str]:
-        """Return unqueried ingredients prioritized: harmful first, then safe."""
         all_vocab = list(HARMFUL_SET) + [i for i in KNOWN_INGREDIENTS if i not in HARMFUL_SET]
         not_queried = [i for i in all_vocab if i not in self._queried]
-        # Prioritize harmful
         harmful_first = [i for i in not_queried if i in HARMFUL_SET]
         safe_remaining = [i for i in not_queried if i not in HARMFUL_SET]
         return harmful_first[:6] + safe_remaining[:3]
 
     def _compute_verdict(self, obs: Observation) -> str:
-        """
-        Smart decision:
-        - weight risk estimate
-        - weight harmful found
-        - weight claim conflicts
-        - weight confidence
-        """
         harmful_score = len(self._harmful_found) * 0.25
         risk_score = obs.risk_estimate
         conflict_score = self._claim_conflicts * 0.1
         confidence_penalty = (1.0 - obs.confidence) * 0.1
         composite = harmful_score + risk_score + conflict_score + confidence_penalty
-        # Adaptive threshold based on how many harmful items found
         threshold = 0.35 if len(self._harmful_found) > 0 else 0.5
         return "UNSAFE" if composite >= threshold else "SAFE"
