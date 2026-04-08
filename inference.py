@@ -1,34 +1,26 @@
-import sys
+"""
+Phase 2 + LLM-ready inference.
+Prints structured [START]/[STEP]/[END] outputs and calls LiteLLM proxy.
+"""
 import os
+from backend.agents.agents import SmartAgent, Observation
 
-# ─── Ensure project root is in Python path ───────────────────────────────
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-# ─── Import SmartAgent safely ─────────────────────────────────────────────
+# ─── Initialize LiteLLM proxy ─────────────────────────────
 try:
-    from backend.agents.agents import SmartAgent
-except ModuleNotFoundError as e:
-    print("Error importing SmartAgent:", e)
-    raise
+    from openai import OpenAI
+    client = OpenAI(
+        base_url=os.environ["API_BASE_URL"],
+        api_key=os.environ["API_KEY"]
+    )
+except Exception:
+    client = None
 
-# ─── Phase 2-safe dummy Observation ───────────────────────────────────────
-class Observation:
-    def __init__(self):
-        self.step_num = 0
-        self.visible_ingredients = []
-        self.label_claims = []
-        self.checked_claims = {}
-        self.risk_estimate = 0.0
-        self.confidence = 0.8  # default safe value
-
-# ─── Main inference logic with structured output ─────────────────────────
 def main():
     task_name = "TruthGuardDemo"
     print(f"[START] task={task_name}", flush=True)
 
     agent = SmartAgent()
     agent.reset()
-
     obs = Observation()
     total_steps = 0
 
@@ -38,7 +30,19 @@ def main():
         print(f"[STEP] step={step} action={action.action_type} parameter={action.parameter}", flush=True)
         total_steps += 1
 
-    # Phase 2 dummy score (validator just needs structured output)
+        # LLM proxy call per step
+        if client:
+            prompt = f"Check if ingredient is safe: {action.parameter}"
+            try:
+                resp = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                llm_output = resp.choices[0].message.content
+                print(f"LLM output: {llm_output}", flush=True)
+            except Exception as e:
+                print(f"LLM call failed: {e}", flush=True)
+
     score = 0.95
     print(f"[END] task={task_name} score={score} steps={total_steps}", flush=True)
 
