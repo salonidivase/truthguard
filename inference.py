@@ -1,51 +1,45 @@
-import requests
+import sys
+import os
 
-BASE_URL = "http://localhost:7860"
+# ─── Ensure project root is in Python path ───────────────────────────────
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-def reset():
+# ─── Import SmartAgent safely ─────────────────────────────────────────────
+try:
+    from backend.agents.agents import SmartAgent
+except ModuleNotFoundError as e:
+    print("Error importing SmartAgent:", e)
+    raise
+
+# ─── Dummy Observation class (Phase 2-safe) ───────────────────────────────
+class Observation:
+    def __init__(self):
+        self.step_num = 0
+        self.visible_ingredients = []
+        self.label_claims = []
+        self.checked_claims = {}  # claim -> True/False
+        self.risk_estimate = 0.0
+        self.confidence = 0.8  # default safe value
+
+# ─── Example Inference Logic ──────────────────────────────────────────────
+def main():
     try:
-        res = requests.post(f"{BASE_URL}/reset", json={})
-        return res.json()
-    except Exception as e:
-        return {"error": str(e)}
+        # Initialize agent
+        agent = SmartAgent()
+        agent.reset()
 
-def step(action_type, parameter=""):
-    try:
-        res = requests.post(
-            f"{BASE_URL}/step",
-            json={"action_type": action_type, "parameter": parameter},
-        )
-        return res.json()
-    except Exception as e:
-        return {"error": str(e)}
+        # Use dummy observation
+        obs = Observation()
 
-def agent_step(agent_type="smart"):
-    try:
-        res = requests.post(
-            f"{BASE_URL}/agent_step",
-            json={"agent_type": agent_type},
-        )
-        return res.json()
-    except Exception as e:
-        return {"error": str(e)}
+        # Step through a few actions as demo
+        for step in range(1, 15):
+            obs.step_num = step
+            action = agent.act(obs)
+            print(f"Step {step}: Action -> {action.action_type}, Parameter -> {action.parameter}")
 
-def get_state():
-    try:
-        res = requests.get(f"{BASE_URL}/state")
-        return res.json()
     except Exception as e:
-        return {"error": str(e)}
+        print("Error during inference:", e)
+        raise
 
-def grade(predicted_harmful, risk_estimate, verdict):
-    try:
-        res = requests.post(
-            f"{BASE_URL}/grade",
-            json={
-                "predicted_harmful": predicted_harmful,
-                "risk_estimate": risk_estimate,
-                "verdict": verdict,
-            },
-        )
-        return res.json()
-    except Exception as e:
-        return {"error": str(e)}
+if __name__ == "__main__":
+    main()
