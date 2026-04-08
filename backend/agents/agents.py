@@ -1,6 +1,6 @@
 """
 TruthGuardEnv Agents — Random, RuleBased, Smart.
-Phase 2-safe: uses dummy Observation/Action so no ModuleNotFoundError.
+Phase 2-safe: dummy Observation/Action, full SmartAgent logic.
 """
 import random
 from typing import List
